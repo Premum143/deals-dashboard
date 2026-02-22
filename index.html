@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deals Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <style>
+    body { background:#f1f5f9; font-family:'Segoe UI',system-ui,sans-serif; font-size:14px; }
+
+    /* Topbar */
+    .topbar { background:#1e293b; color:#fff; padding:13px 24px;
+              display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+    .topbar .brand { font-size:1.15rem; font-weight:700; display:flex; align-items:center; gap:8px; }
+    .topbar .controls { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    #lastUpdated { font-size:.75rem; color:#94a3b8; }
+
+    /* Cards */
+    .card { border:none; border-radius:14px; box-shadow:0 1px 5px rgba(0,0,0,.08); }
+    .sec-title { font-size:.68rem; font-weight:700; text-transform:uppercase;
+                 letter-spacing:.08em; color:#64748b; margin-bottom:12px; }
+
+    /* KPI */
+    .kpi { border-left:4px solid #3B82F6; padding:16px 20px; }
+    .kpi-val { font-size:2rem; font-weight:800; color:#1e293b; line-height:1.1; }
+    .kpi-lbl { font-size:.68rem; text-transform:uppercase; letter-spacing:.06em;
+               color:#64748b; margin-top:4px; }
+
+    /* Filter bar */
+    .fbar { background:#fff; border-radius:12px; padding:10px 16px;
+            display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+            box-shadow:0 1px 4px rgba(0,0,0,.06); }
+    .fbar label { font-size:.68rem; font-weight:700; color:#64748b;
+                  text-transform:uppercase; letter-spacing:.05em; margin:0; }
+    .fbar select { font-size:.82rem; border-radius:8px; border:1px solid #e2e8f0;
+                   padding:4px 10px; }
+    #dealCount { font-size:.75rem; color:#64748b; margin-left:auto; font-weight:600; }
+
+    /* Charts */
+    .chart-wrap { position:relative; height:270px; }
+
+    /* Pills */
+    .pill { display:inline-block; padding:2px 9px; border-radius:999px;
+            font-size:.72rem; font-weight:600; white-space:nowrap; }
+    .pill-high       { background:#fee2e2; color:#991b1b; }
+    .pill-medium     { background:#fef3c7; color:#92400e; }
+    .pill-low        { background:#dcfce7; color:#166534; }
+    .pill-training   { background:#dbeafe; color:#1e40af; }
+    .pill-onboarding { background:#ede9fe; color:#5b21b6; }
+
+    /* Table */
+    .tbl-wrap { border-radius:12px; overflow:hidden; max-height:480px; overflow-y:auto; }
+    table { font-size:.8rem; margin:0; }
+    thead th { background:#f8fafc; font-size:.66rem; font-weight:700;
+               text-transform:uppercase; letter-spacing:.06em; color:#64748b;
+               border-bottom:1px solid #e2e8f0; padding:9px 11px;
+               white-space:nowrap; position:sticky; top:0; z-index:1; }
+    tbody td { padding:8px 11px; vertical-align:middle; }
+    tbody tr:hover { background:#f8fafc; }
+    .td-comment { max-width:200px; white-space:normal; color:#64748b; font-size:.75rem; }
+
+    /* High priority section */
+    .hi-card { border-left:4px solid #EF4444 !important; background:#fff8f8; }
+
+    /* Error */
+    #errBanner { display:none; }
+  </style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="brand">📊 Deals Dashboard</div>
+  <div class="controls">
+    <span id="lastUpdated">Loading…</span>
+    <button class="btn btn-sm btn-outline-light" onclick="refreshData()">↻ Refresh</button>
+    <label class="btn btn-sm btn-info text-white fw-semibold mb-0" for="fileInput">📂 Upload CSV</label>
+    <input type="file" id="fileInput" accept=".csv" style="display:none" onchange="loadFile(event)"/>
+  </div>
+</div>
+
+<div class="container-fluid px-4 py-3">
+
+  <!-- Error banner -->
+  <div id="errBanner" class="alert alert-warning alert-dismissible mb-3"></div>
+
+  <!-- Filter bar -->
+  <div class="fbar mb-3">
+    <label>Filters</label>
+    <div class="d-flex align-items-center gap-1">
+      <label>Stage</label>
+      <select id="fStage" onchange="applyFilters()">
+        <option value="">All</option>
+        <option>Training</option>
+        <option>Onboarding</option>
+      </select>
+    </div>
+    <div class="d-flex align-items-center gap-1">
+      <label>Priority</label>
+      <select id="fPriority" onchange="applyFilters()">
+        <option value="">All</option>
+        <option>High</option>
+        <option>Medium</option>
+        <option>Low</option>
+      </select>
+    </div>
+    <div class="d-flex align-items-center gap-1">
+      <label>Pending</label>
+      <select id="fPending" onchange="applyFilters()">
+        <option value="">All</option>
+      </select>
+    </div>
+    <span id="dealCount"></span>
+  </div>
+
+  <!-- KPI row -->
+  <div class="row g-3 mb-3">
+    <div class="col"><div class="card kpi" style="border-color:#3B82F6">
+      <div class="kpi-val" id="kTotal">—</div><div class="kpi-lbl">Total Deals</div>
+    </div></div>
+    <div class="col"><div class="card kpi" style="border-color:#3B82F6">
+      <div class="kpi-val text-primary" id="kTrain">—</div><div class="kpi-lbl">In Training</div>
+    </div></div>
+    <div class="col"><div class="card kpi" style="border-color:#8B5CF6">
+      <div class="kpi-val" style="color:#8B5CF6" id="kOnboard">—</div><div class="kpi-lbl">In Onboarding</div>
+    </div></div>
+    <div class="col"><div class="card kpi" style="border-color:#EF4444">
+      <div class="kpi-val text-danger" id="kHigh">—</div><div class="kpi-lbl">High Priority</div>
+    </div></div>
+    <div class="col"><div class="card kpi" style="border-color:#F59E0B">
+      <div class="kpi-val" style="color:#F59E0B" id="kAvg">—</div><div class="kpi-lbl">Avg Days Elapsed</div>
+    </div></div>
+  </div>
+
+  <!-- Charts row 1 -->
+  <div class="row g-3 mb-3">
+    <div class="col-lg-6"><div class="card p-3">
+      <div class="sec-title">Stage Distribution</div>
+      <div class="chart-wrap"><canvas id="cStage"></canvas></div>
+    </div></div>
+    <div class="col-lg-6"><div class="card p-3">
+      <div class="sec-title">Priority Breakdown</div>
+      <div class="chart-wrap"><canvas id="cPriority"></canvas></div>
+    </div></div>
+  </div>
+
+  <!-- Charts row 2 -->
+  <div class="row g-3 mb-3">
+    <div class="col-lg-6"><div class="card p-3">
+      <div class="sec-title">Pending Actions</div>
+      <div class="chart-wrap"><canvas id="cPending"></canvas></div>
+    </div></div>
+    <div class="col-lg-6"><div class="card p-3">
+      <div class="sec-title">Data Readiness (Masters)</div>
+      <div class="chart-wrap"><canvas id="cReadiness"></canvas></div>
+    </div></div>
+  </div>
+
+  <!-- Charts row 3 -->
+  <div class="row g-3 mb-3">
+    <div class="col-lg-6"><div class="card p-3">
+      <div class="sec-title">Process Mapping Status</div>
+      <div class="chart-wrap"><canvas id="cProcess"></canvas></div>
+    </div></div>
+    <div class="col-lg-6"><div class="card p-3">
+      <div class="sec-title">Average Timeline (Days)</div>
+      <div class="chart-wrap"><canvas id="cTimeline"></canvas></div>
+    </div></div>
+  </div>
+
+  <!-- Deal table -->
+  <div class="card p-3 mb-3">
+    <div class="d-flex align-items-center justify-content-between mb-2">
+      <div class="sec-title mb-0">All Deals</div>
+      <span id="tblCount" class="badge bg-primary rounded-pill"></span>
+    </div>
+    <div class="tbl-wrap">
+      <table class="table table-hover">
+        <thead><tr>
+          <th>#</th><th>Deal</th><th>Stage</th><th>Priority</th>
+          <th>Days Elapsed</th><th>Pending</th><th>Process Mapping</th>
+          <th>Item Master</th><th>Network Master</th><th>BOM Master</th><th>Comments</th>
+        </tr></thead>
+        <tbody id="tblBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- High priority -->
+  <div id="hiSection" class="card p-3 mb-3 hi-card" style="display:none">
+    <div class="sec-title mb-2" style="color:#dc2626">🔴 High Priority — Needs Attention</div>
+    <div class="tbl-wrap">
+      <table class="table table-sm table-hover">
+        <thead><tr><th>Deal</th><th>Days</th><th>Stage</th><th>Pending</th><th>Comments</th></tr></thead>
+        <tbody id="hiBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+/* ═══════════════════════════════════════════════
+   CONFIG
+═══════════════════════════════════════════════ */
+const SHEET_ID  = '1RexqMQ7PHETQY4n7Img7SH394zgBU-Xr';
+
+// Use export?format=csv — more reliable than gviz for all rows
+const BASE_URL  = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv`;
+
+// CORS proxy chain — tried in order until one works
+const URLS = [
+  `https://corsproxy.io/?${encodeURIComponent(BASE_URL)}`,
+  `https://api.allorigins.win/raw?url=${encodeURIComponent(BASE_URL)}`,
+  BASE_URL,   // direct last (may fail in browser due to redirect/CORS)
+];
+
+const REFRESH_MS = 60_000;
+
+/* ═══════════════════════════════════════════════
+   COLORS
+═══════════════════════════════════════════════ */
+const C_PRI    = { High:'#EF4444', Medium:'#F59E0B', Low:'#22C55E' };
+const C_STATUS = {
+  'Uploaded':'#22C55E', 'Partially Uploaded':'#F59E0B',
+  'Cleaned, Not Uploaded':'#60A5FA', 'Extracted':'#A78BFA',
+  'Not Shared':'#EF4444', 'Unsure':'#9CA3AF', 'Sample Not Made':'#FB923C',
+};
+const C_PM = { 'Done':'#22C55E', 'Not Done':'#EF4444', 'Not Fully Clear':'#F59E0B' };
+const PALETTE  = ['#3B82F6','#8B5CF6','#F59E0B','#22C55E','#EF4444','#60A5FA'];
+
+/* ═══════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════ */
+let allData = [], fData = [];
+const CI = {};   // chart instances
+
+/* ═══════════════════════════════════════════════
+   DATA FETCHING
+═══════════════════════════════════════════════ */
+async function fetchOne(url) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!res.ok) return null;
+    const txt = await res.text();
+    // Must look like a CSV with multiple rows
+    return (txt.includes(',') && txt.split('\n').length > 2) ? txt : null;
+  } catch { clearTimeout(t); return null; }
+}
+
+async function loadFromUrl() {
+  for (const url of URLS) {
+    const txt = await fetchOne(url);
+    if (txt) { processCSV(txt); hideErr(); return; }
+  }
+  showErr(
+    '⚠️ Could not auto-load from Google Sheets. ' +
+    'Click <strong>📂 Upload CSV</strong> above — export your sheet via ' +
+    '<em>File → Download → CSV</em> in Google Sheets.'
+  );
+}
+
+function loadFile(e) {
+  const f = e.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => { processCSV(ev.target.result); hideErr(); };
+  r.readAsText(f);
+}
+
+function refreshData() { loadFromUrl(); }
+
+/* ═══════════════════════════════════════════════
+   CSV PARSING
+═══════════════════════════════════════════════ */
+function processCSV(raw) {
+  raw = raw.replace(/^\uFEFF/, '');   // strip BOM
+  Papa.parse(raw, {
+    header: true,
+    skipEmptyLines: 'greedy',         // skip blank + whitespace-only rows
+    transformHeader: h => h.trim(),
+    transform: v => v.trim(),
+    complete: ({ data, errors }) => {
+      if (errors.length) console.warn('PapaParse warnings:', errors);
+
+      const NUM_COLS = [
+        'Days Elapsed', 'Data collected & Uploaded in Days',
+        'Payment to Implementation (days)',
+        'Implementation to Training (days)',
+        'Payment to Training (days)',
+      ];
+
+      allData = data
+        .filter(r => r['Deal'] && r['Deal'].trim() !== '') // skip rows with no deal name
+        .map(r => {
+          NUM_COLS.forEach(c => { r[c] = parseFloat(r[c]) || null; });
+          return r;
+        });
+
+      // Rebuild pending dropdown
+      const pends = [...new Set(allData.map(r => r['Pending']).filter(Boolean))].sort();
+      const sel = document.getElementById('fPending');
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">All</option>';
+      pends.forEach(p => sel.innerHTML += `<option${p===cur?' selected':''}>${esc(p)}</option>`);
+
+      applyFilters();
+      stamp();
+    }
+  });
+}
+
+/* ═══════════════════════════════════════════════
+   FILTERS  — applied to EVERY chart AND the table
+═══════════════════════════════════════════════ */
+function applyFilters() {
+  const stage = document.getElementById('fStage').value;
+  const pri   = document.getElementById('fPriority').value;
+  const pend  = document.getElementById('fPending').value;
+
+  fData = allData.filter(r =>
+    (!stage || r['Stage']    === stage) &&
+    (!pri   || r['Priority'] === pri  ) &&
+    (!pend  || r['Pending']  === pend )
+  );
+
+  const t = `${fData.length} of ${allData.length} deals`;
+  document.getElementById('dealCount').textContent = t;
+
+  renderAll();
+}
+
+/* ═══════════════════════════════════════════════
+   RENDER ALL
+═══════════════════════════════════════════════ */
+function renderAll() {
+  renderKPIs();
+  renderStage();
+  renderPriority();
+  renderPending();
+  renderReadiness();
+  renderProcess();
+  renderTimeline();
+  renderTable();    // ← uses fData (filtered)
+  renderHi();
+}
+
+/* ── KPIs ──────────────────────────────────────── */
+function renderKPIs() {
+  const d = fData;
+  $('kTotal',   d.length);
+  $('kTrain',   d.filter(r => r['Stage']    === 'Training').length);
+  $('kOnboard', d.filter(r => r['Stage']    === 'Onboarding').length);
+  $('kHigh',    d.filter(r => r['Priority'] === 'High').length);
+  const days = d.map(r => r['Days Elapsed']).filter(v => v !== null);
+  $('kAvg', days.length ? Math.round(days.reduce((a,b)=>a+b,0)/days.length) : '—');
+}
+
+/* ── CHART HELPERS ─────────────────────────────── */
+function countBy(arr, key) {
+  return arr.reduce((acc, r) => {
+    const v = r[key] || 'Unknown';
+    acc[v] = (acc[v] || 0) + 1;
+    return acc;
+  }, {});
+}
+
+function mkChart(id, cfg) {
+  if (CI[id]) CI[id].destroy();
+  CI[id] = new Chart(document.getElementById(id), cfg);
+}
+
+const baseOpts = (extra={}) => ({
+  responsive: true, maintainAspectRatio: false,
+  plugins: { legend: { labels: { font: { size: 11 } } } },
+  ...extra
+});
+
+/* ── CHARTS ────────────────────────────────────── */
+function renderStage() {
+  const c = countBy(fData, 'Stage');
+  mkChart('cStage', { type:'doughnut', data:{
+    labels: Object.keys(c),
+    datasets:[{ data:Object.values(c), backgroundColor:['#3B82F6','#8B5CF6'],
+                borderWidth:3, borderColor:'#fff' }]
+  }, options: baseOpts({ cutout:'50%', plugins:{ legend:{ position:'right' } } }) });
+}
+
+function renderPriority() {
+  const order = ['High','Medium','Low'];
+  const c = countBy(fData, 'Priority');
+  mkChart('cPriority', { type:'bar', data:{
+    labels: order,
+    datasets:[{ data:order.map(p=>c[p]||0), backgroundColor:order.map(p=>C_PRI[p]),
+                borderRadius:8, borderSkipped:false }]
+  }, options: baseOpts({
+    plugins:{ legend:{ display:false } },
+    scales:{ y:{ beginAtZero:true, ticks:{ stepSize:1 }, grid:{ color:'#f1f5f9' } },
+             x:{ grid:{ display:false } } }
+  }) });
+}
+
+function renderPending() {
+  const c = countBy(fData, 'Pending');
+  const pairs = Object.entries(c).sort((a,b)=>b[1]-a[1]);
+  mkChart('cPending', { type:'bar', data:{
+    labels: pairs.map(([k])=>k),
+    datasets:[{ data:pairs.map(([,v])=>v), backgroundColor:'#60A5FA',
+                borderRadius:6, borderSkipped:false }]
+  }, options: baseOpts({
+    indexAxis:'y',
+    plugins:{ legend:{ display:false } },
+    scales:{ x:{ beginAtZero:true, ticks:{ stepSize:1 }, grid:{ color:'#f1f5f9' } },
+             y:{ grid:{ display:false } } }
+  }) });
+}
+
+function renderReadiness() {
+  const masters = ['Item Master','Network Master','BOM Master'];
+  const statuses = new Set();
+  masters.forEach(m => fData.forEach(r => { if(r[m]) statuses.add(r[m]); }));
+  const datasets = [...statuses].map(s => ({
+    label: s, borderRadius: 4,
+    data: masters.map(m => fData.filter(r=>r[m]===s).length),
+    backgroundColor: C_STATUS[s] || '#9CA3AF',
+  }));
+  mkChart('cReadiness', { type:'bar', data:{
+    labels: masters.map(m=>m.replace(' Master','')), datasets
+  }, options: baseOpts({
+    plugins:{ legend:{ position:'right', labels:{ font:{ size:10 } } } },
+    scales:{ x:{ stacked:true, grid:{ display:false } },
+             y:{ stacked:true, beginAtZero:true, ticks:{ stepSize:1 },
+                 grid:{ color:'#f1f5f9' } } }
+  }) });
+}
+
+function renderProcess() {
+  const c = countBy(fData, 'Process Mapping');
+  mkChart('cProcess', { type:'doughnut', data:{
+    labels: Object.keys(c),
+    datasets:[{ data:Object.values(c),
+                backgroundColor:Object.keys(c).map(k=>C_PM[k]||'#9CA3AF'),
+                borderWidth:3, borderColor:'#fff' }]
+  }, options: baseOpts({ cutout:'50%', plugins:{ legend:{ position:'right' } } }) });
+}
+
+function renderTimeline() {
+  const phases = [
+    { label:'Payment→Impl',     col:'Payment to Implementation (days)' },
+    { label:'Impl→Training',    col:'Implementation to Training (days)' },
+    { label:'Payment→Training', col:'Payment to Training (days)' },
+    { label:'Data Upload',      col:'Data collected & Uploaded in Days' },
+  ];
+  const avgs = phases.map(p => {
+    const vals = fData.map(r=>r[p.col]).filter(v=>v!==null);
+    return vals.length ? +(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1) : 0;
+  });
+  mkChart('cTimeline', { type:'bar', data:{
+    labels: phases.map(p=>p.label),
+    datasets:[{ data:avgs, backgroundColor:PALETTE, borderRadius:8, borderSkipped:false }]
+  }, options: baseOpts({
+    plugins:{ legend:{ display:false },
+      tooltip:{ callbacks:{ label: ctx=>` ${ctx.raw} days` } } },
+    scales:{ y:{ beginAtZero:true, grid:{ color:'#f1f5f9' } },
+             x:{ grid:{ display:false } } }
+  }) });
+}
+
+/* ── TABLE (uses fData — fully filtered) ────────── */
+function renderTable() {
+  const PO = { High:0, Medium:1, Low:2 };
+  const sorted = [...fData].sort((a,b) => {
+    const d = (PO[a.Priority]??3) - (PO[b.Priority]??3);
+    return d !== 0 ? d : (b['Days Elapsed']||0)-(a['Days Elapsed']||0);
+  });
+
+  document.getElementById('tblCount').textContent = `${sorted.length} deals`;
+
+  document.getElementById('tblBody').innerHTML = sorted.map((r, i) => `
+    <tr>
+      <td class="text-muted">${i+1}</td>
+      <td><strong>${esc(r['Deal']||'')}</strong></td>
+      <td><span class="pill pill-${(r['Stage']||'').toLowerCase()}">${esc(r['Stage']||'')}</span></td>
+      <td><span class="pill pill-${(r['Priority']||'').toLowerCase()}">${esc(r['Priority']||'')}</span></td>
+      <td class="fw-semibold">${r['Days Elapsed']??'—'}</td>
+      <td>${esc(r['Pending']||'')}</td>
+      <td>${pmBadge(r['Process Mapping'])}</td>
+      <td>${statusBadge(r['Item Master'])}</td>
+      <td>${statusBadge(r['Network Master'])}</td>
+      <td>${statusBadge(r['BOM Master'])}</td>
+      <td class="td-comment">${esc(r['Comments']||'')}</td>
+    </tr>`).join('');
+}
+
+/* ── HIGH PRIORITY SECTION ─────────────────────── */
+function renderHi() {
+  const hi = fData.filter(r=>r['Priority']==='High')
+                  .sort((a,b)=>(b['Days Elapsed']||0)-(a['Days Elapsed']||0));
+  const sec = document.getElementById('hiSection');
+  if (!hi.length) { sec.style.display='none'; return; }
+  sec.style.display = 'block';
+  document.getElementById('hiBody').innerHTML = hi.map(r => `
+    <tr>
+      <td><strong>${esc(r['Deal']||'')}</strong></td>
+      <td class="fw-semibold">${r['Days Elapsed']??'—'}</td>
+      <td><span class="pill pill-${(r['Stage']||'').toLowerCase()}">${esc(r['Stage']||'')}</span></td>
+      <td>${esc(r['Pending']||'')}</td>
+      <td class="td-comment">${esc(r['Comments']||'')}</td>
+    </tr>`).join('');
+}
+
+/* ── BADGE HELPERS ─────────────────────────────── */
+function statusBadge(v) {
+  if (!v) return '';
+  const cls = v==='Uploaded'?'low': v==='Partially Uploaded'?'medium':
+              v==='Not Shared'?'high':'medium';
+  return `<span class="pill pill-${cls}" style="font-size:.68rem">${esc(v)}</span>`;
+}
+function pmBadge(v) {
+  if (!v) return '';
+  const cls = v==='Done'?'low': v==='Not Done'?'high':'medium';
+  return `<span class="pill pill-${cls}" style="font-size:.68rem">${esc(v)}</span>`;
+}
+
+/* ── UTILS ─────────────────────────────────────── */
+function $(id, val) { const e=document.getElementById(id); if(e) e.textContent=val; }
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                  .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function stamp() {
+  const n = new Date();
+  document.getElementById('lastUpdated').textContent =
+    `Updated: ${n.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})} ` +
+    n.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+}
+function showErr(html) {
+  const e = document.getElementById('errBanner');
+  e.innerHTML = html + ` <button class="btn-close float-end" onclick="hideErr()"></button>`;
+  e.style.display = 'block';
+}
+function hideErr() { document.getElementById('errBanner').style.display='none'; }
+
+/* ═══════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════ */
+loadFromUrl();
+setInterval(loadFromUrl, REFRESH_MS);
+</script>
+</body>
+</html>
