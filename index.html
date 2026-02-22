@@ -142,8 +142,8 @@
       <div class="chart-wrap"><canvas id="cStage"></canvas></div>
     </div></div>
     <div class="col-lg-6"><div class="card p-3">
-      <div class="sec-title">Priority Breakdown</div>
-      <div class="chart-wrap"><canvas id="cPriority"></canvas></div>
+      <div class="sec-title">Priority × Stage — Where Are Deals?</div>
+      <div class="chart-wrap"><canvas id="cPriorityStage"></canvas></div>
     </div></div>
   </div>
 
@@ -168,6 +168,18 @@
     <div class="col-lg-6"><div class="card p-3">
       <div class="sec-title">Average Timeline (Days)</div>
       <div class="chart-wrap"><canvas id="cTimeline"></canvas></div>
+    </div></div>
+  </div>
+
+  <!-- Management Insights row -->
+  <div class="row g-3 mb-3">
+    <div class="col-lg-6"><div class="card p-3">
+      <div class="sec-title">Avg Days Elapsed by Priority — Who Is Moving Faster?</div>
+      <div class="chart-wrap"><canvas id="cAvgDaysPri"></canvas></div>
+    </div></div>
+    <div class="col-lg-6"><div class="card p-3">
+      <div class="sec-title">Pending Actions by Priority — Where Is Effort Needed?</div>
+      <div class="chart-wrap"><canvas id="cPendingPri"></canvas></div>
     </div></div>
   </div>
 
@@ -342,12 +354,14 @@ function applyFilters() {
 function renderAll() {
   renderKPIs();
   renderStage();
-  renderPriority();
+  renderPriorityStage();
   renderPending();
   renderReadiness();
   renderProcess();
   renderTimeline();
-  renderTable();    // ← uses fData (filtered)
+  renderAvgDaysByPri();
+  renderPendingByPri();
+  renderTable();
   renderHi();
 }
 
@@ -392,17 +406,63 @@ function renderStage() {
   }, options: baseOpts({ cutout:'50%', plugins:{ legend:{ position:'right' } } }) });
 }
 
-function renderPriority() {
-  const order = ['High','Medium','Low'];
-  const c = countBy(fData, 'Priority');
-  mkChart('cPriority', { type:'bar', data:{
-    labels: order,
-    datasets:[{ data:order.map(p=>c[p]||0), backgroundColor:order.map(p=>C_PRI[p]),
-                borderRadius:8, borderSkipped:false }]
-  }, options: baseOpts({
-    plugins:{ legend:{ display:false } },
+/* Grouped bar: x = Priority, groups = Training / Onboarding
+   Tells management: "Of our High priority deals, how many are still in Onboarding?" */
+function renderPriorityStage() {
+  const pris   = ['High','Medium','Low'];
+  const stages = ['Training','Onboarding'];
+  const colors = ['#3B82F6','#8B5CF6'];
+  const datasets = stages.map((stage, i) => ({
+    label: stage,
+    data: pris.map(p => fData.filter(r => r['Priority']===p && r['Stage']===stage).length),
+    backgroundColor: colors[i],
+    borderRadius: 7,
+    borderSkipped: false,
+  }));
+  mkChart('cPriorityStage', { type:'bar', data:{ labels:pris, datasets }, options: baseOpts({
+    plugins:{ legend:{ position:'top' } },
     scales:{ y:{ beginAtZero:true, ticks:{ stepSize:1 }, grid:{ color:'#f1f5f9' } },
              x:{ grid:{ display:false } } }
+  }) });
+}
+
+/* Bar: avg Days Elapsed per priority tier
+   Tells management: "Are High priority clients getting faster attention?" */
+function renderAvgDaysByPri() {
+  const pris = ['High','Medium','Low'];
+  const avgs = pris.map(p => {
+    const vals = fData.filter(r=>r['Priority']===p).map(r=>r['Days Elapsed']).filter(v=>v!==null);
+    return vals.length ? +(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1) : 0;
+  });
+  mkChart('cAvgDaysPri', { type:'bar', data:{
+    labels: pris,
+    datasets:[{ data:avgs, backgroundColor:['#EF4444','#F59E0B','#22C55E'],
+                borderRadius:8, borderSkipped:false }]
+  }, options: baseOpts({
+    plugins:{ legend:{ display:false },
+              tooltip:{ callbacks:{ label: ctx => ` ${ctx.raw} days avg` } } },
+    scales:{ y:{ beginAtZero:true, grid:{ color:'#f1f5f9' } },
+             x:{ grid:{ display:false } } }
+  }) });
+}
+
+/* Stacked horizontal bar: y = Pending Action, colors = Priority
+   Tells management: "Which urgent actions have the most High priority deals blocked?" */
+function renderPendingByPri() {
+  const pris    = ['High','Medium','Low'];
+  const colors  = ['#EF4444','#F59E0B','#22C55E'];
+  const actions = [...new Set(fData.map(r=>r['Pending']).filter(Boolean))];
+  const datasets = pris.map((p, i) => ({
+    label: p,
+    data: actions.map(a => fData.filter(r=>r['Priority']===p && r['Pending']===a).length),
+    backgroundColor: colors[i],
+    borderRadius: 4,
+  }));
+  mkChart('cPendingPri', { type:'bar', data:{ labels:actions, datasets }, options: baseOpts({
+    indexAxis: 'y',
+    plugins:{ legend:{ position:'top' } },
+    scales:{ x:{ stacked:true, beginAtZero:true, ticks:{ stepSize:1 }, grid:{ color:'#f1f5f9' } },
+             y:{ stacked:true, grid:{ display:false } } }
   }) });
 }
 
